@@ -24,3 +24,5 @@ Fast and compact immutable graph database
 * **Spatial indexes!**
 * **Schema support?**
 * **Triggers support?**
+* **ACL support!**
+* **Drivers for most popular languages!**
