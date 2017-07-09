@@ -1,0 +1,14 @@
+{
+	"name": "dbd",
+	"authors": [
+		"jin"
+	],
+	"dependencies": {
+		"vibe-d:http": "~>0.7.30",
+		"jin-tree": "~>3.0.0"
+	},
+	"versions": ["VibeDefaultMain"],
+	"description": "Fast and compact immutable graph database",
+	"copyright": "Copyright © 2017, jin",
+	"license": "unlicensed"
+}

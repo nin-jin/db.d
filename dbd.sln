@@ -1,0 +1,49 @@
+Microsoft Visual Studio Solution File, Format Version 11.00
+# Visual Studio 2010
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "dbd", ".dub/dbd.visualdproj", "{3C90EEC2-9779-4512-83A5-D598BA020240}"
+	ProjectSection(ProjectDependencies) = postProject
+		{699D5F04-150E-4AAE-BA22-0AC92F730BB7} = {699D5F04-150E-4AAE-BA22-0AC92F730BB7}
+		{58232AE0-DDBB-4ADF-9AD9-EDAE659FB1AA} = {58232AE0-DDBB-4ADF-9AD9-EDAE659FB1AA}
+		{4579CEBF-8D2A-46BC-8021-8272FFB921EC} = {4579CEBF-8D2A-46BC-8021-8272FFB921EC}
+		{52493F3A-A52B-4AC4-837F-5C88C471AA80} = {52493F3A-A52B-4AC4-837F-5C88C471AA80}
+		{2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC} = {2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC}
+		{2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC} = {2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC}
+		{2D45BFA1-285A-41F0-95B4-AF91578DE9B6} = {2D45BFA1-285A-41F0-95B4-AF91578DE9B6}
+	EndProjectSection
+EndProject
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "jin-tree", ".dub/jin-tree.visualdproj", "{699D5F04-150E-4AAE-BA22-0AC92F730BB7}"
+EndProject
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "vibe-d:http", ".dub/vibe-d_http.visualdproj", "{58232AE0-DDBB-4ADF-9AD9-EDAE659FB1AA}"
+EndProject
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "diet-ng", ".dub/diet-ng.visualdproj", "{4579CEBF-8D2A-46BC-8021-8272FFB921EC}"
+EndProject
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "vibe-d:core", ".dub/vibe-d_core.visualdproj", "{52493F3A-A52B-4AC4-837F-5C88C471AA80}"
+EndProject
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "vibe-d:data", ".dub/vibe-d_data.visualdproj", "{2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC}"
+EndProject
+Project("{B8E58FDF-2C36-4D08-9EEF-38478DE57DE9}") = "vibe-d:utils", ".dub/vibe-d_utils.visualdproj", "{2D45BFA1-285A-41F0-95B4-AF91578DE9B6}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		debug|Win32 = debug|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4579CEBF-8D2A-46BC-8021-8272FFB921EC}.debug|Win32.ActiveCfg = debug|Win32
+		{4579CEBF-8D2A-46BC-8021-8272FFB921EC}.debug|Win32.Build.0 = debug|Win32
+		{58232AE0-DDBB-4ADF-9AD9-EDAE659FB1AA}.debug|Win32.ActiveCfg = debug|Win32
+		{58232AE0-DDBB-4ADF-9AD9-EDAE659FB1AA}.debug|Win32.Build.0 = debug|Win32
+		{3C90EEC2-9779-4512-83A5-D598BA020240}.debug|Win32.ActiveCfg = debug|Win32
+		{3C90EEC2-9779-4512-83A5-D598BA020240}.debug|Win32.Build.0 = debug|Win32
+		{2D45BFA1-285A-41F0-95B4-AF91578DE9B6}.debug|Win32.ActiveCfg = debug|Win32
+		{2D45BFA1-285A-41F0-95B4-AF91578DE9B6}.debug|Win32.Build.0 = debug|Win32
+		{2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC}.debug|Win32.ActiveCfg = debug|Win32
+		{2260E8B0-8BD2-4EA0-A162-EAC1E3E64FBC}.debug|Win32.Build.0 = debug|Win32
+		{52493F3A-A52B-4AC4-837F-5C88C471AA80}.debug|Win32.ActiveCfg = debug|Win32
+		{52493F3A-A52B-4AC4-837F-5C88C471AA80}.debug|Win32.Build.0 = debug|Win32
+		{699D5F04-150E-4AAE-BA22-0AC92F730BB7}.debug|Win32.ActiveCfg = debug|Win32
+		{699D5F04-150E-4AAE-BA22-0AC92F730BB7}.debug|Win32.Build.0 = debug|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

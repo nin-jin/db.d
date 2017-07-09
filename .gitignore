@@ -1,3 +1,6 @@
+# Runtime files
+/store
+
 # Compiled Object files
 *.o
 *.obj
@@ -22,3 +25,6 @@ docs/
 
 # Code coverage
 *.lst
+
+# Visual Studio
+/.vs
