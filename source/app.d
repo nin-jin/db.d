@@ -162,7 +162,7 @@ if( FieldNameTuple!Data.length > 1 )
 
 
 
-struct Null {};
+alias Null = typeof( null );
 
 enum Type : ubyte
 {
@@ -217,7 +217,7 @@ auto read( Data : Vary )( Stream stream )
 	final switch( tag.type ) {
 		case Type.Value :
 			final switch( tag.value ) {
-				case Value.Null : return Data( Null() );
+				case Value.Null : return Data( null );
 				case Value.False : return Data( false );
 				case Value.True : return Data( true );
 			}
@@ -229,6 +229,15 @@ auto read( Data : Vary )( Stream stream )
 		case Type.Branch : return Data( stream.read!(Branch[])( tag.value.to!ushort ) );
 		case Type.Long : return Data( stream.read!(ulong[])( tag.value.to!ushort ) );
 	}
+}
+
+uint new_key( Vary var )
+{
+	return var.tryVisit!(
+		( Null val )=> 0 ,
+		( Leaf[] val )=> val.new_key() ,
+		( Branch[] val )=> val.new_key() ,
+	);
 }
 
 Vary select( Vary var , uint key )
@@ -257,20 +266,25 @@ struct Link
 		uint offset;
 	}
 
-	Data read( Data )( )
+	Data get( Data )( )
 	{
 		return Store.stream( this.stream ).seek( this.offset ).read!Data;
 	}
 }
 
+uint new_key( Link link )
+{
+	return link.get!Vary.new_key();
+}
+
 Vary select( Link dict , uint key )
 {
-	return dict.read!Vary.select( key );
+	return dict.get!Vary.select( key );
 }
 
 Link insert( Link link , uint key , Vary value )
 {
-	auto branches = link.read!Vary.insert( key , value );
+	auto branches = link.get!Vary.insert( key , value );
 	switch( branches.length ) {
 		case 1 : return branches[0].target;
 		default : return Store.write( branches.Vary );
@@ -295,10 +309,16 @@ struct Leaf
 	}
 }
 
+uint new_key( Leaf[] leafs )
+{
+	if( leafs.length == 0 ) return 0;
+	return leafs[ $ - 1 ].key + 1;
+}
+
 Vary select( Leaf[] leafs , uint key )
 {
 	foreach( leaf ; leafs ) if( key == leaf.key ) return leaf.value;
-	return Vary( Null() );
+	return Vary( null );
 }
 
 Branch[] insert( Leaf[] leafs , uint key , Vary value )
@@ -332,10 +352,16 @@ struct Branch
 	}
 }
 
+uint new_key( Branch[] branches )
+{
+	if( branches.length == 0 ) return 0;
+	return branches[ $ - 1 ].key + 1;
+}
+
 Vary select( Branch[] branches , uint key )
 {
 	foreach( branch ; branches ) if( key <= branch.key ) return branch.target.select( key );
-	return Vary( Null() );
+	return Vary( null );
 }
 
 Branch[] insert( Branch[] branches , uint key , Vary value )
@@ -343,7 +369,7 @@ Branch[] insert( Branch[] branches , uint key , Vary value )
 	foreach( index , ref branch ; branches ) {
 		if( index < branches.length - 1 && key > branch.key ) continue;
 
-		branches = branches[ 0 .. index ] ~ branch.target.read!Vary.insert( key , value ) ~ branches[ ( index + 1 ) .. $ ];
+		branches = branches[ 0 .. index ] ~ branch.target.get!Vary.insert( key , value ) ~ branches[ ( index + 1 ) .. $ ];
 		break;
 	}
 
@@ -412,16 +438,15 @@ class DB
 	{
 		auto found = DB.dict.select( id.to!uint );
 		if( found.peek!Null ) throw new Exception( "Not found: " ~ id.to!string );
-		auto comment = found.peek!(Link[])[0][0].read!Vary;
+		auto comment = found.get!(Link[])[0].get!Vary;
 
 		return [
 			"id" : id.Json ,
-			"parent" : comment.select( "parent".hash ).peek!(Link[])[0][0].read!Vary.peek!(uint[])[0][0].Json ,
-			"message" : comment.select( "message".hash ).peek!(Link[])[0][0].read!Vary.peek!string[0].Json ,
+			"parent" : comment.select( "parent".hash ).get!(Link[])[0].get!Vary.peek!(uint[])[0][0].Json ,
+			"message" : comment.select( "message".hash ).get!(Link[])[0].get!Vary.peek!string[0].Json ,
 		].Json;
 	}
 
-	static uint last_index;
 	static Link dict;
 	
 	static Json patch( string id , Json data , string[] fetch )
@@ -429,11 +454,12 @@ class DB
 		auto link = Store.write( Vary( cast(Leaf[]) [] ) );
 		if( "parent" in data ) link = link.insert( "parent".hash , Vary([ data["parent"].get!uint ]) );
 		if( "message" in data ) link = link.insert( "message".hash , Vary([ Store.write( Vary( data["message"].get!string ) ) ]) );
-		++ DB.last_index;
-		DB.dict = DB.dict.insert( DB.last_index , Vary([ link ]) );
+
+		auto key = DB.dict.new_key;
+		DB.dict = DB.dict.insert( key , Vary([ link ]) );
 
 		Store.commit = DB.dict;
-		return [ "id" : DB.last_index.Json ].Json;
+		return [ "id" : id.to!string.Json ].Json;
 	}
 
 	static Json action( string method , string id , string[] fetch , Json data )
@@ -465,11 +491,11 @@ unittest
 	dict = dict.insert( 5 , "Hello5".Vary );
 	Store.commit = dict;
 
-	assert( dict.select( 0 ).peek!string[0] == "Hello0" );
-	assert( dict.select( 1 ).peek!string[0] == "Hello1" );
-	assert( dict.select( 2 ).peek!string[0] == "Hello2" );
-	assert( dict.select( 3 ).peek!string[0] == "Hello3" );
-	assert( dict.select( 4 ).peek!string[0] == "Hello4" );
-	assert( dict.select( 5 ).peek!string[0] == "Hello5" );
-	assert( dict.select( 6 ).peek!Null );
+	assert( dict.select( 0 ).get!string == "Hello0" );
+	assert( dict.select( 1 ).get!string == "Hello1" );
+	assert( dict.select( 2 ).get!string == "Hello2" );
+	assert( dict.select( 3 ).get!string == "Hello3" );
+	assert( dict.select( 4 ).get!string == "Hello4" );
+	assert( dict.select( 5 ).get!string == "Hello5" );
+	assert( dict.select( 6 ).get!Null == null );
 }
