@@ -342,6 +342,16 @@ Branch[] insert( Leaf[] leafs , uint key , Vary value )
 	return leafs2.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , Store.write( Vary( chunk ) ) ) ).array;
 }
 
+/+Branch[] insert( Leaf[] leafs , Json data )
+{
+	Vary[ uint ] dict;
+
+	foreach( leaf ; leafs ) dict[ leaf.key ] = leaf.value;
+
+	foreach( name , value ; data ) {
+		dict[ name.hash ] = value;
+	}
+}+/
 
 
 struct Branch
@@ -396,7 +406,7 @@ class DB
 
 		listenHTTP( settings , router );
 
-		DB.dict = Store.write( Vary( cast(Leaf[]) [] ) );
+		DB.dict = Store.write( Vary( new Leaf[0] ) );
 	}
 
 	static void handle_websocket( scope WebSocket sock )
@@ -441,9 +451,9 @@ class DB
 		auto comment = found.get!(Link[])[0].get!Vary;
 
 		return [
-			"id" : id.Json ,
-			"parent" : comment.select( "parent".hash ).get!(Link[])[0].get!Vary.peek!(uint[])[0][0].Json ,
-			"message" : comment.select( "message".hash ).get!(Link[])[0].get!Vary.peek!string[0].Json ,
+			"id" : id.to!uint.Json ,
+			"parent" : comment.select( "parent".hash ).get!(uint[])[0].Json ,
+			"message" : comment.select( "message".hash ).get!(Link[])[0].get!Vary.get!string.Json ,
 		].Json;
 	}
 
@@ -451,15 +461,18 @@ class DB
 	
 	static Json patch( string id , Json data , string[] fetch )
 	{
-		auto link = Store.write( Vary( cast(Leaf[]) [] ) );
-		if( "parent" in data ) link = link.insert( "parent".hash , Vary([ data["parent"].get!uint ]) );
-		if( "message" in data ) link = link.insert( "message".hash , Vary([ Store.write( Vary( data["message"].get!string ) ) ]) );
+		Leaf[] leafs;
+		
+		if( "parent" in data ) leafs ~= Leaf( "parent".hash , [ data["parent"].get!uint ].Vary );
+		if( "message" in data ) leafs ~= Leaf( "message".hash , [ Store.write( data["message"].get!string.Vary ) ].Vary );
+
+		auto entity = Store.write( leafs.sort!q{ a.key > b.key }.array.Vary );
 
 		auto key = DB.dict.new_key;
-		DB.dict = DB.dict.insert( key , Vary([ link ]) );
+		DB.dict = DB.dict.insert( key , [ entity ].Vary );
 
 		Store.commit = DB.dict;
-		return [ "id" : id.to!string.Json ].Json;
+		return [ "id" : key.Json ].Json;
 	}
 
 	static Json action( string method , string id , string[] fetch , Json data )
