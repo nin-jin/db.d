@@ -19,87 +19,50 @@ import std.digest.murmurhash;
 class Store
 {
 	static string path= "./store/";
+	static sync_delay = 16.msecs;
 
 	static Stream[] streams;
-	static Var* root;
+
+	static Var root;
+	static Var draft;
 
 	static auto stream( const ushort id )
 	{
 		while( id >= streams.length ) {
-			streams ~= new Stream( path ~ streams.length.to!string ~ ".dbd" );
+			streams ~= new Stream( streams.length.to!ushort );
 		}
 		return streams[ id ];
 	}
 
-	static auto put( Record )( Record record , ushort type = Var.Link )
-	{
-		return Var( 1 , stream(1).put( record ) , type );
-	}
-
-	static auto make( Record , Args... )( Args args )
-	{
-		return Store.put( Record( args ) );
-	}
-
-	static auto var( string data )
-	{
-		if( data.length > 6 ) return Store.put( data );
-		else return Var( data );
-	}
-
-	static auto var( ushort stream , uint offset )
-	{
-		return Var( stream , offset );
-	}
-
-	static auto var( Pair[] pairs )
-	{
-		switch( pairs.length ) {
-			case 1 :
-				Pair[1] pairs2 = pairs[ 0 .. 1 ];
-				return Store.put( pairs2 , Var.Pair1 );
-			case 2 :
-				Pair[2] pairs2 = pairs[ 0 .. 2 ];
-				return Store.put( pairs2 , Var.Pair2 );
-			case 3 :
-				Pair[3] pairs2 = pairs[ 0 .. 3 ];
-				return Store.put( pairs2 , Var.Pair3 );
-			case 4 :
-				Pair[4] pairs2 = pairs[ 0 .. 4 ];
-				return Store.put( pairs2 , Var.Pair4 );
-			case 5 :
-				Pair[5] pairs2 = pairs[ 0 .. 5 ];
-				return Store.put( pairs2 , Var.Pair5 );
-			default : assert(0);
-		}
-	}
-
 	static commit( Var root )
 	{
-		Store.root = &root;
+		draft = root;
 		yield;
 	}
 
 	static sync()
 	{
-		if( !Store.root ) return;
+		if( root == draft ) return;
 		
 		if( streams.length > 0 ) {
 			foreach( stream ; streams[ 1 .. $ ] ) stream.sync;
 		}
 		
-		stream(0).put( *Store.root );
+		stream(0).put( draft );
 		stream(0).sync;
 		
-		Store.root = null;
+		root = draft;
 	}
 
 	static this()
 	{
+		auto commits = stream(0);
+		root = draft = ( commits.size < 8 ? Null : commits.seek( commits.size - Var.sizeof ).read!Var );
+
 		runTask({
 			while( true ) {
-				16.msecs.sleep;
-				Store.sync;
+				sync_delay.sleep;
+				sync;
 			}
 		});
 	}
@@ -108,39 +71,34 @@ class Store
 
 class Stream
 {
+	ushort id;
+
 	File input;
 	File output;
 
-	this( string path )
+	this( ushort id )
 	{
+		this.id = id;
+		auto path = Store.path ~ id.to!string ~ ".dbd";
+
 		this.output = File( path , "ab" );
 		this.input = File( path , "rb" );
-
-		if( this.output.tell == 0 ) {
-			this.output.lockingBinaryWriter.put( "jin-dbd\n" );
-		}
 	}
 
-	uint put( Data )( Data data ) if( !isDynamicArray!Data )
+	uint put( Data ... )( Data data )
 	{
-		auto offset = this.output.tell.to!uint;
-		this.output.lockingBinaryWriter.put( data );
-		return offset;
-	}
-
-	uint put( Data )( Data data ) if( isDynamicArray!Data )
-	{
-		auto offset = this.output.tell.to!uint;
+		auto offset = this.size;
 		
 		auto writer = this.output.lockingBinaryWriter;
 
-		writer.put( data.length.to!uint );
-		writer.put( data );
-
-		auto pad = 4 - data.length % 4;
-		if( pad != 4 ) writer.put( "    "[ 0 .. pad ] );
+		foreach( item ; data ) writer.put( item );
 
 		return offset;
+	}
+
+	auto size()
+	{
+		return this.output.tell.to!uint;
 	}
 
 	Stream seek( uint offset )
@@ -149,18 +107,26 @@ class Stream
 		return this;
 	}
 
-	auto read( Type )() if( !isDynamicArray!Type )
+	auto read( Type )()
+	if( !isDynamicArray!Type )
 	{
 		Unqual!Type[1] buffer;
 		this.input.rawRead( buffer );
-		return buffer[0];
+		return cast( Type ) buffer[0];
 	}
 
-	Type read( Type )() if( isDynamicArray!Type )
+	auto read( Type )( ushort count )
+	if( isDynamicArray!Type )
 	{
-		auto buffer = new Unqual!(ElementEncodingType!Type)[ this.read!uint ];
+		auto buffer = new Unqual!(ElementEncodingType!Type)[ count ];
 		this.input.rawRead( buffer );
 		return assumeUnique( buffer );
+	}
+
+	Type read( Type )()
+	if( isDynamicArray!Type )
+	{
+		return this.read!Type( this.read!uint );
 	}
 
 	void sync()
@@ -171,36 +137,41 @@ class Stream
 
 }
 
+enum Type : ubyte
+{
+	Null = 0 ,
+	Char = 1 ,
+	Int = 2 ,
+	Leaf = 3 ,
+	Branch = 4 ,
+}
+
+Type TypeOf( Data )()
+{
+	return staticIndexOf!( Unqual!Data , AliasSeq!( typeof(null) , char , uint , Leaf , Branch ) ).to!Type;
+}
+
 struct Var
-{align(2):
+{ align(1):
 
-	enum : ushort {
-		String0 = 0 ,
-		String1 = 1 ,
-		String2 = 2 ,
-		String3 = 3 ,
-		String4 = 4 ,
-		String5 = 5 ,
-		String6 = 6 ,
-		Link = 7 ,
-		Pair1 = 8 ,
-		Pair2 = 9 ,
-		Pair3 = 10 ,
-		Pair4 = 11 ,
-		Pair5 = 12 ,
-	}
-
-	ushort type;
+	Type type;
+	ubyte count;
 
 	union
 	{
 		struct
 		{
 			ushort stream;
-			uint offset;
+
+			union
+			{
+				uint offset;
+				uint value;
+			}
 		}
 
 		char[6] data;
+
 	}
 
 	auto input()
@@ -208,180 +179,262 @@ struct Var
 		return Store.stream( this.stream ).seek( this.offset );
 	}
 
-	alias input this;
-
-	this( string data )
+	this( Data )( Data[] data )
 	{
-		if( data.length > 6 ) throw new Exception( "Var data length must less or equal 6" );
-
-		this.type = data.length.to!ushort;
-		this.data[ 0 .. data.length ] = data;
+		this.type = TypeOf!Data;
+		if( data.length < 255 ) {
+			this.count = data.length.to!ubyte;
+			this.stream = 1;
+			this.offset = Store.stream( 1 ).put( data );
+		} else {
+			this.stream = 1;
+			this.offset = Store.stream( 1 ).put( data.length.to!ushort , data );
+		}
 	}
 
-	this( ushort stream , uint offset , ushort type = Var.Link )
+	this( Type type , ubyte count , ushort stream , uint offset )
 	{
 		this.type = type;
+		this.count = count;
 		this.stream = stream;
 		this.offset = offset;
 	}
 
-	string toString()
+	this( uint value )
+	{
+		this.type = Type.Int;
+		this.count = 1;
+		this.offset = value;
+	}
+
+	this( Leaf[] pairs )
+	{
+		if( pairs.length > 4 ) {
+			this.type = type.Branch;
+			this.count = 2;
+			this.stream = 1;
+			auto cut = pairs.length / 2;
+			this.offset = Store.stream(1).put([
+				Branch( pairs[ cut - 1 ].key , pairs[ 0 .. cut ].Var ) ,
+				Branch( pairs[ $ - 1 ].key , pairs[ cut .. $ ].Var ) ,
+			]);
+		} else {
+			this.type = type.Leaf;
+			this.count = pairs.length.to!ubyte;
+			this.stream = 1;
+			this.offset = Store.stream(1).put( pairs );
+		}
+	}
+
+	this( Branch[] pairs )
+	{
+		if( pairs.length == 1 ) {
+			this = pairs[0].target;
+		} else if( pairs.length > 4 ) {
+			this.type = type.Branch;
+			this.count = 2;
+			this.stream = 1;
+			auto cut = pairs.length / 2;
+			pairs = [
+				Branch( pairs[ cut - 1 ].key , pairs[ 0 .. cut ].Var ) ,
+				Branch( pairs[ $ - 1 ].key , pairs[ cut .. $ ].Var ) ,
+			];
+		} else {
+			this.type = Type.Branch;
+			this.count = pairs.length.to!ubyte;
+			this.stream = 1;
+			this.offset = Store.stream(1).put( pairs );
+		}
+	}
+
+	this( Var[] data )
+	{
+		auto leafs = new Leaf[ data.length ];
+
+		foreach( index , item ; data ) {
+			leafs[ index ] = Leaf( index.to!uint , item );
+		}
+
+		this( leafs );
+	}
+
+	this( Json data )
+	{
+		if( data.type == Json.Type.Int ) {
+			this( data.get!uint );
+		} else if( data.type == Json.Type.String ) {
+			this( data.get!string );
+		} else if( data.type == Json.Type.Array ) {
+			this( data.get!(Json[]).map!( val => val.Var ).array );
+		} else if( data.type == Json.Type.Object ) {
+			Leaf[] leafs;
+			foreach( key , value ; data.get!(Json[string]) ) {
+				leafs ~= Leaf( key.hash[0] , value.Var );
+			}
+			this( leafs );
+		} else {
+			this(0);
+			throw new Exception( "Unsupported JSON type " ~ data.type.to!string );
+		}
+	}
+
+	Target to( Target )()
+	if( is( Target : Json ) )
 	{
 		switch( this.type ) {
-			case String0 : 
-			case String1 : 
-			case String2 : 
-			case String3 : 
-			case String4 : 
-			case String5 : 
-			case String6 :
-				return "\"" ~ this.data[ 0 .. this.type ].to!string ~ "\"";
-			
-			case Link : return "Link(" ~ this.stream.to!string ~ "/" ~ this.offset.to!string ~ ")";
-			case Pair1 : return "Pair1(" ~ this.stream.to!string ~ "/" ~ this.offset.to!string ~ ")" ~ this.read!(Pair[1]).to!string;
-			case Pair2 : return "Pair2(" ~ this.stream.to!string ~ "/" ~ this.offset.to!string ~ ")" ~ this.read!(Pair[2]).to!string;
-			case Pair3 : return "Pair3(" ~ this.stream.to!string ~ "/" ~ this.offset.to!string ~ ")" ~ this.read!(Pair[3]).to!string;
-			case Pair4 : return "Pair3(" ~ this.stream.to!string ~ "/" ~ this.offset.to!string ~ ")" ~ this.read!(Pair[4]).to!string;
-			case Pair5 : return "Pair3(" ~ this.stream.to!string ~ "/" ~ this.offset.to!string ~ ")" ~ this.read!(Pair[5]).to!string;
-
-			default : assert(0);
+			case Type.Null : return null.Json;
+			case Type.Char : return this.read!string.Json;
+			case Type.Int : return this.value.Json;
+			default : throw new Exception( "Can not convert this type to Json: " ~ this.type.to!string );
 		}
 	}
 
-}
-
-ulong hash( string data )
-{
-	auto res = digest!( MurmurHash3!(128,64) )( data );
-	return * cast(ulong*) cast(void*) &res;
-}
-
-enum Null = Store.var( 0,0 );
-
-struct Pair
-{ align(8):
-
-	ulong key;
-	Var value;
-
-	string toString()
+	auto read( Data )()
+	if( !isArray!Data )
 	{
-		return this.key.to!string ~ ":" ~ this.value.to!string;
+		return this.input.read!( Data );
+	}
+	
+	auto read( Data )()
+	if( isArray!Data )
+	{
+		return this.input.read!( Data )( this.count );
 	}
 }
 
-Var select( Pairs )( Pairs pairs , ulong key )
-if( isStaticArray!Pairs )
+
+
+enum Null = Var( Type.Null , 0 , 0 , 0 );
+
+Var select( Var var , uint key )
 {
-	foreach( pair ; pairs ) {
-		switch( pair.value.type ) {
-			case Var.Pair1 :
-			case Var.Pair2 :
-			case Var.Pair3 :
-			case Var.Pair4 :
-			case Var.Pair5 :
-				if( key <= pair.key ) return pair.value.select( key );
-				break;
-			default :
-				if( key == pair.key ) return pair.value;
-		}
+	switch( var.type ) {
+		case Type.Leaf : return var.read!(Leaf[]).select( key );
+		case Type.Branch : return var.read!(Branch[]).select( key );
+		default : return var;
 	}
+}
+
+Branch[] insert( Var link , uint key , Var value )
+{
+	switch( link.type ) {
+		case Type.Null : return [ Branch( key , [ Leaf( key , value ) ].Var ) ];
+		case Type.Leaf : return link.read!(Leaf[]).insert( key , value );
+		case Type.Branch : return link.read!(Branch[]).insert( key , value );
+		default : throw new Exception( "Wrong type for inserting: " ~ link.type.to!string );
+	}
+}
+
+uint max_key( Var link )
+{
+	switch( link.type ) {
+		case Type.Null : return 0;
+		case Type.Leaf : return link.read!(Leaf[])[ $ - 1 ].key;
+		case Type.Branch : return link.read!(Branch[])[ $ - 1 ].key;
+		default : throw new Exception( "Wrong type for max_key: " ~ link.type.to!string );
+	}
+}
+
+
+uint[4] hash( string data )
+{
+	return cast(uint[4]) digest!( MurmurHash3!(128,64) )( data );
+}
+
+auto choose( Pair )( Pair[] pairs , uint key )
+{
+	foreach( index , pair ; pairs ) {
+		if( key <= pair.key ) return index;
+	}
+
+	return pairs.length - 1;
+}
+
+
+
+struct Leaf
+{ align(1):
+	uint key;
+	Var value;
+}
+
+Var select( const Leaf[] pairs , uint key )
+{
+	auto pair = pairs[ pairs.choose( key ) ];
+	if( key == pair.key ) return pair.value;
 	return Null;
 }
 
-Var select( Var link , ulong key )
+Branch[] insert( const Leaf[] pairs , uint key , Var data )
 {
-	switch( link.type ) {
-		case Var.Pair1 : return link.read!( Pair[1] ).select( key );
-		case Var.Pair2 : return link.read!( Pair[2] ).select( key );
-		case Var.Pair3 : return link.read!( Pair[3] ).select( key );
-		case Var.Pair4 : return link.read!( Pair[4] ).select( key );
-		case Var.Pair5 : return link.read!( Pair[5] ).select( key );
-		default : assert(0);
-	}
-}
+	auto index = pairs.choose( key );
 
-Var insert( Var link , ulong key , Var value )
-{
-	auto pairs = link.insert_inner( key , value );
-	switch( pairs.length ) {
-		case 1 :
-			switch( pairs[0].value.type ) {
-				case Var.Pair1 :
-				case Var.Pair2 :
-				case Var.Pair3 :
-				case Var.Pair4 :
-				case Var.Pair5 :
-					return pairs[0].value;
-				default : break;
-			}
-		case 2 :
-		case 3 :
-			return Store.var( pairs );
-		default : assert(0);
-	}
-}
-
-Pair[] insert_inner( Pairs )( Pairs pairs , ulong key , Var value )
-if( isStaticArray!Pairs )
-{
-	Pair[] pairs2;
-
-	search : foreach_reverse( index , ref pair ; pairs ) {
-
-		switch( pair.value.type ) {
-			case Var.Pair1 :
-			case Var.Pair2 :
-			case Var.Pair3 :
-			case Var.Pair4 :
-			case Var.Pair5 :
-				if( index == pairs.length - 1 || key <= pair.key ) {
-					auto add = pair.value.insert_inner( key , value );
-					pairs2 = pairs[ 0 .. index ] ~ add ~ pairs[ ( index + 1 ) .. $ ];
-					if( pairs2.length < 5 ) return [ Pair( pairs2[ $ - 1 ].key , Store.var( pairs2 ) ) ];
-					return pairs2.chunks(3).map!( chunk => Pair( chunk[ $ - 1 ].key , Store.var( chunk ) ) ).array;
-				}
-				break;
-			default :
-				if( key == pair.key ) {
-					pair.value = value;
-					return [ Pair( pairs[ $ - 1 ].key , Store.var( pairs ) ) ];
-				}
-		}
-
+	if( ( key > pairs[ $ - 1 ].key ) ) {
+		return ( pairs ~ [ Leaf( key , data ) ] ).reduce_pairs;
 	}
 
-	pairs2 = pairs[ 0 .. $ ] ~ [ Pair( key , value ) ];
-	if( pairs2.length < 5 ) return [ Pair( pairs2[ $ - 1 ].key , Store.var( pairs2 ) ) ];
-	return pairs2.chunks(3).map!( chunk => Pair( chunk[ $ - 1 ].key , Store.var( chunk ) ) ).array;
+	return ( pairs[ 0 .. index ] ~ [ Leaf( key , data ) ] ~ pairs[ ( pairs[ index ].key == key ? index + 1 : index ) .. $ ] ).reduce_pairs;
 }
 
-Pair[] insert_inner( Var link , ulong key , Var value )
+Branch[] reduce_pairs( Pair )( Pair[] pairs )
 {
-	switch( link.type ) {
-		case Var.Pair1 : return link.read!( Pair[1] ).insert_inner( key , value );
-		case Var.Pair2 : return link.read!( Pair[2] ).insert_inner( key , value );
-		case Var.Pair3 : return link.read!( Pair[3] ).insert_inner( key , value );
-		case Var.Pair4 : return link.read!( Pair[4] ).insert_inner( key , value );
-		case Var.Pair5 : return link.read!( Pair[5] ).insert_inner( key , value );
-		default :
-			if( link == Null ) return [ Pair( key , value ) ];
-			assert( 0 , "Unexpected Var type " ~ link.type.to!string );
-	}
+	if( pairs.length < 5 ) return [ Branch( pairs[ $ - 1 ].key , pairs.Var ) ];
+	return pairs.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , chunk.Var ) ).array;
 }
 
-struct Comment
+/+
+Branch[] insert( Leaf[] pairs , Json data )
 {
-align(4):
+	Leaf[ uint ] dict;
 
-	ulong parent;
-	Var message;
+	foreach( pair ; pairs ) dict[ pair.key ] = pair;
 
-	string toString()
-	{
-		return "Comment{ parent:" ~ this.parent.to!string ~ " message:" ~ this.message.to!string ~ " }";
-	}
+	foreach( name , value ; data ) dict[ name.hash ] = value.Var;
+
+	auto leafs = dict.sort!q{ a.key > b.key }.array;
+
+	if( leafs.length < 5 ) return [ Branch( leafs[ $ - 1 ].key , leafs.Var ) ];
+	return leafs.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , chunk.Var ) ).array;
 }
++/
+
+
+struct Branch
+{ align(1):
+	uint key;
+	Var target;
+}
+
+Var select( const Branch[] pairs , uint key )
+{
+	return pairs[ pairs.choose( key ) ].target.select( key );
+}
+
+Branch[] insert( const Branch[] pairs , uint key , Var value )
+{
+	auto index = pairs.choose( key );
+	return ( pairs[ 0 .. index ] ~ pairs[ index ].target.insert( key , value ) ~ pairs[ index + 1 .. $ ] ).reduce_pairs;
+}
+
+/+
+Branch[] insert( Branch[] pairs , Json data )
+{
+	Json[ uint ] dict;
+
+	foreach( name , value ; data ) {
+		auto pair = pairs.select_pair( name.hash );
+
+		if( pair.key !in dict ) dict[ pair.key ] = Json.emptyObject;
+		dict[ pair.key ][ name ] = value.Var;
+	}
+
+	auto branches = pairs.map!q{ a.value.insert( dict[ a.key ] ) }.flat.array;
+
+	if( leafs.length < 5 ) return [ Branch( leafs[ $ - 1 ].key , leafs.Var ) ];
+	return leafs.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , chunk.Var ) ).array;
+}
++/
+
 
 static this()
 {
@@ -404,7 +457,8 @@ void handle_websocket( scope WebSocket sock )
 
 		auto message = parseJsonString( sock.receiveText );
 		auto data = message[ "data" ];
-		auto resp = DB.action( message[ "method" ].get!string , message[ "id" ].get!string , [] , data );
+		auto fetch = message["fetch"].get!(Json[]).map!q{ a.get!string }.array;
+		auto resp = DB.action( message[ "method" ].get!string , message[ "id" ].get!string , fetch , data );
 
 		sock.send( [
 			"request_id" : message[ "request_id" ] ,
@@ -424,7 +478,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 	try {
 
-		res.writeBody( DB.action( req.method.to!string , req.path[ 1 .. $ ] , [] , Json() ).toString , "application/json" );
+		res.writeBody( DB.action( req.method.to!string , req.path[ 1 .. $ ] , req.query.getAll( "fetch" ) , Json() ).toString , "application/json" );
 
 	} catch( Exception error ) {
 		res.writeBody( error.msg , HTTPStatus.internalServerError , "text/plain" );
@@ -435,32 +489,31 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 class DB {
 
-	static Json get( string id , string[] fetch )
+	static Json get( string id , const string[] fetch )
 	{
-		auto link = DB.dict.select( id.to!uint );
-		auto comment = link.read!Comment;
+		auto entity = Store.root.select( id.to!uint );
 
-		return [
-			"id" : id.Json ,
-			"parent" : comment.parent.Json ,
-			"message" : comment.message.read!string.Json ,
-		].Json;
+		auto resp = [ "id" : id.Json ].Json;
+
+		foreach( field ; fetch ) {
+			resp[ field ] = entity.select( field.hash[0] ).to!Json;
+		}
+
+		return resp;
 	}
 
-	static ulong last_index = 0;
-	static Var dict = Null;
-	
-	static Json patch( string id , Json data , string[] fetch )
+	static Json patch( string id , Json data , const string[] fetch )
 	{
-		auto link = Store.make!Comment( "parent" in data ? data["parent"].get!ulong : 0 , Store.var( data["message"].get!string ) );
-		++ DB.last_index;
-		DB.dict = DB.dict.insert( DB.last_index , link );
+		auto entity = data.Var;
 
-		Store.commit( DB.dict );
-		return [ "id" : DB.last_index.Json ].Json;
+		auto key = Store.draft.max_key + 1;
+
+		Store.commit = Store.draft.insert( key , entity ).Var;
+
+		return [ "id" : key.Json ].Json;
 	}
 
-	static Json action( string method , string id , string[] fetch , Json data )
+	static Json action( string method , string id , const string[] fetch , Json data )
 	{
 		switch( method ) {
 			case "GET" : return DB.get( id , fetch );
@@ -471,22 +524,43 @@ class DB {
 
 }
 
+
+
 unittest
 {
 	auto dict = Null;
-	dict = dict.insert( 0 , Store.var( "Hello0" ) );
-	dict = dict.insert( 1 , Store.var( "Hello1" ) );
-	dict = dict.insert( 2 , Store.var( "Hello2" ) );
-	dict = dict.insert( 3 , Store.var( "Hello3" ) );
-	dict = dict.insert( 4 , Store.var( "Hello4" ) );
-	dict = dict.insert( 5 , Store.var( "Hello5" ) );
-	Store.commit = dict;
+	dict = dict.insert( 0 , "Hello0".Var ).Var;
+	dict = dict.insert( 1 , "Hello1".Var ).Var;
+	dict = dict.insert( 2 , "Hello2".Var ).Var;
+	dict = dict.insert( 3 , "Hello3".Var ).Var;
+	dict = dict.insert( 4 , "Hello4".Var ).Var;
+	dict = dict.insert( 5 , "Hello5".Var ).Var;
 
-	assert( dict.select( 0 ).data[] == "Hello0" );
-	assert( dict.select( 1 ).data[] == "Hello1" );
-	assert( dict.select( 2 ).data[] == "Hello2" );
-	assert( dict.select( 3 ).data[] == "Hello3" );
-	assert( dict.select( 4 ).data[] == "Hello4" );
-	assert( dict.select( 5 ).data[] == "Hello4" );
+	assert( dict.select( 0 ).read!string == "Hello0" );
+	assert( dict.select( 1 ).read!string == "Hello1" );
+	assert( dict.select( 2 ).read!string == "Hello2" );
+	assert( dict.select( 3 ).read!string == "Hello3" );
+	assert( dict.select( 4 ).read!string == "Hello4" );
+	assert( dict.select( 5 ).read!string == "Hello5" );
+	assert( dict.select( 6 ) == Null );
+}
+
+unittest
+{
+	auto dict = [
+		"Hello0".Json ,
+		"Hello1".Json ,
+		"Hello2".Json ,
+		"Hello3".Json ,
+		"Hello4".Json ,
+		"Hello5".Json ,
+	].Json.Var;
+
+	assert( dict.select( 0 ).read!string == "Hello0" );
+	assert( dict.select( 1 ).read!string == "Hello1" );
+	assert( dict.select( 2 ).read!string == "Hello2" );
+	assert( dict.select( 3 ).read!string == "Hello3" );
+	assert( dict.select( 4 ).read!string == "Hello4" );
+	assert( dict.select( 5 ).read!string == "Hello5" );
 	assert( dict.select( 6 ) == Null );
 }
