@@ -315,12 +315,12 @@ Var select( Var var , uint key )
 	}
 }
 
-Branch[] insert( Var link , uint key , Var value )
+Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
 {
 	switch( link.type ) {
-		case Type.Null : return [ Branch( key , [ Leaf( key , value ) ].Var ) ];
-		case Type.Leaf : return link.read!(Leaf[]).insert( key , value );
-		case Type.Branch : return link.read!(Branch[]).insert( key , value );
+		case Type.Null : return [ Branch( key , [ Leaf( key , patch( Null ) ) ].Var ) ];
+		case Type.Leaf : return link.read!(Leaf[]).insert( key , patch );
+		case Type.Branch : return link.read!(Branch[]).insert( key , patch );
 		default : throw new Exception( "Wrong type for inserting: " ~ link.type.to!string );
 	}
 }
@@ -365,15 +365,19 @@ Var select( const Leaf[] pairs , uint key )
 	return Null;
 }
 
-Branch[] insert( const Leaf[] pairs , uint key , Var data )
+Branch[] insert( const Leaf[] pairs , uint key , Var delegate( Var ) patch )
 {
-	auto index = pairs.choose( key );
-
 	if( ( key > pairs[ $ - 1 ].key ) ) {
-		return ( pairs ~ [ Leaf( key , data ) ] ).reduce_pairs;
+		return ( pairs ~ [ Leaf( key , patch( Null ) ) ] ).reduce_pairs;
 	}
 
-	return ( pairs[ 0 .. index ] ~ [ Leaf( key , data ) ] ~ pairs[ ( pairs[ index ].key == key ? index + 1 : index ) .. $ ] ).reduce_pairs;
+	auto index = pairs.choose( key );
+
+	if( pairs[ index ].key == key ) {
+		return ( pairs[ 0 .. index ] ~ [ Leaf( key , patch( pairs[ index ].value ) ) ] ~ pairs[ index + 1 .. $ ] ).reduce_pairs;
+	} else {
+		return ( pairs[ 0 .. index ] ~ [ Leaf( key , patch( Null ) ) ] ~ pairs[ index .. $ ] ).reduce_pairs;
+	}
 }
 
 Branch[] reduce_pairs( Pair )( Pair[] pairs )
@@ -410,10 +414,10 @@ Var select( const Branch[] pairs , uint key )
 	return pairs[ pairs.choose( key ) ].target.select( key );
 }
 
-Branch[] insert( const Branch[] pairs , uint key , Var value )
+Branch[] insert( const Branch[] pairs , uint key , Var delegate( Var ) patch )
 {
 	auto index = pairs.choose( key );
-	return ( pairs[ 0 .. index ] ~ pairs[ index ].target.insert( key , value ) ~ pairs[ index + 1 .. $ ] ).reduce_pairs;
+	return ( pairs[ 0 .. index ] ~ pairs[ index ].target.insert( key , patch ) ~ pairs[ index + 1 .. $ ] ).reduce_pairs;
 }
 
 /+
@@ -487,6 +491,9 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 	}
 }
 
+
+// comment=123(parent,message,author)
+
 class DB {
 
 	static Json get( string id , const string[] fetch )
@@ -508,7 +515,12 @@ class DB {
 
 		auto key = Store.draft.max_key + 1;
 
-		Store.commit = Store.draft.insert( key , entity ).Var;
+		Store.commit = Store.draft.insert( key , val => entity ).Var;
+
+		//auto parent_id = data["parent"].get!uint;
+		//auto parent = Store.draft.select( parent_id );
+		
+		//Store.commit = Store.draft.insert( parent_id , parent.insert( parent.insert , key.Var ).Var ).Var;
 
 		return [ "id" : key.Json ].Json;
 	}
@@ -529,12 +541,12 @@ class DB {
 unittest
 {
 	auto dict = Null;
-	dict = dict.insert( 0 , "Hello0".Var ).Var;
-	dict = dict.insert( 1 , "Hello1".Var ).Var;
-	dict = dict.insert( 2 , "Hello2".Var ).Var;
-	dict = dict.insert( 3 , "Hello3".Var ).Var;
-	dict = dict.insert( 4 , "Hello4".Var ).Var;
-	dict = dict.insert( 5 , "Hello5".Var ).Var;
+	dict = dict.insert( 0 , val => "Hello0".Var ).Var;
+	dict = dict.insert( 1 , val => "Hello1".Var ).Var;
+	dict = dict.insert( 2 , val => "Hello2".Var ).Var;
+	dict = dict.insert( 3 , val => "Hello3".Var ).Var;
+	dict = dict.insert( 4 , val => "Hello4".Var ).Var;
+	dict = dict.insert( 5 , val => "Hello5".Var ).Var;
 
 	assert( dict.select( 0 ).read!string == "Hello0" );
 	assert( dict.select( 1 ).read!string == "Hello1" );
