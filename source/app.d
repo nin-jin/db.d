@@ -120,7 +120,7 @@ class Stream
 	{
 		auto buffer = new Unqual!(ElementEncodingType!Type)[ count ];
 		this.input.rawRead( buffer );
-		return assumeUnique( buffer );
+		return cast( Type ) buffer;
 	}
 
 	Type read( Type )()
@@ -285,6 +285,18 @@ struct Var
 			case Type.Null : return null.Json;
 			case Type.Char : return this.read!string.Json;
 			case Type.Int : return this.value.Json;
+			case Type.Leaf :
+				auto res = Json.emptyArray;
+				foreach( leaf ; this.read!(Leaf[]) ) {
+					res ~= leaf.value.to!Json;
+				}
+				return res;
+			case Type.Branch :
+				auto res = Json.emptyArray;
+				foreach( leaf ; this.read!(Branch[]) ) {
+					res ~= leaf.target.to!Json;
+				}
+				return res;
 			default : throw new Exception( "Can not convert this type to Json: " ~ this.type.to!string );
 		}
 	}
@@ -340,13 +352,13 @@ Var insert( Var var , uint[] keys , Var delegate( Var ) patch )
 	return var.insert( keys[0] , patch_middle ).Var;
 }
 
-uint max_key( Var link )
+uint next_key( Var link )
 {
 	switch( link.type ) {
 		case Type.Null : return 0;
-		case Type.Leaf : return link.read!(Leaf[])[ $ - 1 ].key;
-		case Type.Branch : return link.read!(Branch[])[ $ - 1 ].key;
-		default : throw new Exception( "Wrong type for max_key: " ~ link.type.to!string );
+		case Type.Leaf : return link.read!(Leaf[])[ $ - 1 ].key + 1;
+		case Type.Branch : return link.read!(Branch[])[ $ - 1 ].key + 1;
+		default : throw new Exception( "Wrong type for next_key: " ~ link.type.to!string );
 	}
 }
 
@@ -508,7 +520,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 
 // comment=123(parent,message,author)
-// coment/* => comment/{parent}/child
+// coment/* => parent/child
 
 class DB {
 
@@ -529,16 +541,21 @@ class DB {
 	{
 		auto entity = data.Var;
 
-		auto key = Store.draft.max_key + 1;
+		auto key = Store.draft.next_key;
 
 		Store.commit = Store.draft.insert( key , val => entity ).Var;
 
-		//auto parent_id = data["parent"].get!uint;
-		//auto parent = Store.draft.select( parent_id );
+		if( data["parent"].type == Json.Type.String ) {
+			auto parent_id = data["parent"].get!string.to!uint;
+			
+			Store.commit = Store.draft.insert( parent_id , ( Var parent ) {
+				return parent.insert( "child".hash[0] , ( Var child ) {
+					return child.insert( child.next_key , val => key.Var ).Var;
+				} ).Var;
+			} ).Var;
+		}
 		
-		//Store.commit = Store.draft.insert( parent_id , parent.insert( parent.insert , key.Var ).Var ).Var;
-
-		return [ "id" : key.Json ].Json;
+		return [ "id" : key.to!string.Json ].Json;
 	}
 
 	static Json action( string method , string id , const string[] fetch , Json data )
