@@ -1,7 +1,7 @@
 # db.d
 Fast and compact immutable graph database
 
-## Key features of MVP (soming soon)
+## Key features of MVP (coming soon)
 
 * **Fast data adding.** We need not of "Write Ahead Log" and two-step commits.
 * **Compact storing.** We need not to reserve memory for inplace data changing.
