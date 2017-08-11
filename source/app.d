@@ -315,6 +315,15 @@ Var select( Var var , uint key )
 	}
 }
 
+Var select( Var var , uint[4] keys )
+{
+	foreach( key ; keys ) {
+		if( var == Null ) return Null;
+		var = var.select( key );
+	}
+	return var;
+}
+
 Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
 {
 	switch( link.type ) {
@@ -323,6 +332,12 @@ Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
 		case Type.Branch : return link.read!(Branch[]).insert( key , patch );
 		default : throw new Exception( "Wrong type for inserting: " ~ link.type.to!string );
 	}
+}
+
+Var insert( Var var , uint[] keys , Var delegate( Var ) patch )
+{
+	auto patch_middle = ( keys.length == 1 ) ? patch : ( Var val )=> val.insert( keys[ 1 .. $ ] , patch );
+	return var.insert( keys[0] , patch_middle ).Var;
 }
 
 uint max_key( Var link )
@@ -493,6 +508,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 
 // comment=123(parent,message,author)
+// coment/* => comment/{parent}/child
 
 class DB {
 
