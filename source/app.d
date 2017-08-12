@@ -520,7 +520,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 
 // comment=123(parent,message,author)
-// coment/* => parent/child
+// coment/* => parent/child/*
 
 class DB {
 
