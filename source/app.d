@@ -34,12 +34,6 @@ class Store
 		return streams[ id ];
 	}
 
-	static commit( Var root )
-	{
-		draft = root;
-		yield;
-	}
-
 	static sync()
 	{
 		if( root == draft ) return;
@@ -543,12 +537,12 @@ class DB {
 
 		auto key = Store.draft.next_key;
 
-		Store.commit = Store.draft.insert( key , val => entity ).Var;
+		Store.draft = Store.draft.insert( key , val => entity ).Var;
 
 		if( data["parent"].type == Json.Type.String ) {
 			auto parent_id = data["parent"].get!string.to!uint;
 			
-			Store.commit = Store.draft.insert( parent_id , ( Var parent ) {
+			Store.draft = Store.draft.insert( parent_id , ( Var parent ) {
 				return parent.insert( "child".hash[0] , ( Var child ) {
 					return child.insert( child.next_key , val => key.Var ).Var;
 				} ).Var;
