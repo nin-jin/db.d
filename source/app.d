@@ -330,6 +330,15 @@ Var select( Var var , uint[4] keys )
 	return var;
 }
 
+Var select( Var var , string[] path )
+{
+	foreach( name ; path ) {
+		if( var == Null ) return Null;
+		var = var.select( name.hash[0] );
+	}
+	return var;
+}
+
 Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
 {
 	switch( link.type ) {
@@ -407,21 +416,6 @@ Branch[] reduce_pairs( Pair )( Pair[] pairs )
 	return pairs.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , chunk.Var ) ).array;
 }
 
-/+
-Branch[] insert( Leaf[] pairs , Json data )
-{
-	Leaf[ uint ] dict;
-
-	foreach( pair ; pairs ) dict[ pair.key ] = pair;
-
-	foreach( name , value ; data ) dict[ name.hash ] = value.Var;
-
-	auto leafs = dict.sort!q{ a.key > b.key }.array;
-
-	if( leafs.length < 5 ) return [ Branch( leafs[ $ - 1 ].key , leafs.Var ) ];
-	return leafs.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , chunk.Var ) ).array;
-}
-+/
 
 
 struct Branch
@@ -441,24 +435,6 @@ Branch[] insert( const Branch[] pairs , uint key , Var delegate( Var ) patch )
 	return ( pairs[ 0 .. index ] ~ pairs[ index ].target.insert( key , patch ) ~ pairs[ index + 1 .. $ ] ).reduce_pairs;
 }
 
-/+
-Branch[] insert( Branch[] pairs , Json data )
-{
-	Json[ uint ] dict;
-
-	foreach( name , value ; data ) {
-		auto pair = pairs.select_pair( name.hash );
-
-		if( pair.key !in dict ) dict[ pair.key ] = Json.emptyObject;
-		dict[ pair.key ][ name ] = value.Var;
-	}
-
-	auto branches = pairs.map!q{ a.value.insert( dict[ a.key ] ) }.flat.array;
-
-	if( leafs.length < 5 ) return [ Branch( leafs[ $ - 1 ].key , leafs.Var ) ];
-	return leafs.chunks(3).map!( chunk => Branch( chunk[ $ - 1 ].key , chunk.Var ) ).array;
-}
-+/
 
 
 static this()
@@ -513,7 +489,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 }
 
 
-// comment=123(parent,message,author)
+// comment/123(parent,message,author)
 // coment/* => parent/child/*
 
 class DB {
