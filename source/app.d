@@ -334,7 +334,13 @@ Var select( Var var , string[] path )
 {
 	foreach( name ; path ) {
 		if( var == Null ) return Null;
-		var = var.select( name.hash[0] );
+		uint key;
+		try {
+			key = name.to!uint;
+		} catch( ConvException error ) {
+			key = name.hash[0];
+		}
+		var = var.select( key );
 	}
 	return var;
 }
@@ -489,8 +495,9 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 }
 
 
-// comment/123(parent,message,author)
-// coment/* => parent/child/*
+// user/age>18.json
+// comment/id=123.json?parent&message&author/name&author/avatar
+// comment/* => parent/child/*
 
 class DB {
 
