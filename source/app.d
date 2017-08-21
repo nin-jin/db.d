@@ -265,7 +265,7 @@ struct Var
 			foreach( key , value ; data.get!(Json[string]) ) {
 				leafs ~= Leaf( key.hash[0] , value.Var );
 			}
-			this( leafs );
+			this( leafs.sort!q{ a.key < b.key }.array );
 		} else {
 			this(0);
 			throw new Exception( "Unsupported JSON type " ~ data.type.to!string );
@@ -298,7 +298,8 @@ struct Var
 	auto read( Data )()
 	if( !isArray!Data )
 	{
-		return this.input.read!( Data );
+		static if( typeid( Data ) == typeid( uint ) ) return this.value;
+		else return this.input.read!( Data );
 	}
 	
 	auto read( Data )()
@@ -547,26 +548,7 @@ class DB {
 }
 
 
-
-unittest
-{
-	auto dict = Null;
-	dict = dict.insert( 0 , val => "Hello0".Var ).Var;
-	dict = dict.insert( 1 , val => "Hello1".Var ).Var;
-	dict = dict.insert( 2 , val => "Hello2".Var ).Var;
-	dict = dict.insert( 3 , val => "Hello3".Var ).Var;
-	dict = dict.insert( 4 , val => "Hello4".Var ).Var;
-	dict = dict.insert( 5 , val => "Hello5".Var ).Var;
-
-	assert( dict.select( 0 ).read!string == "Hello0" );
-	assert( dict.select( 1 ).read!string == "Hello1" );
-	assert( dict.select( 2 ).read!string == "Hello2" );
-	assert( dict.select( 3 ).read!string == "Hello3" );
-	assert( dict.select( 4 ).read!string == "Hello4" );
-	assert( dict.select( 5 ).read!string == "Hello5" );
-	assert( dict.select( 6 ) == Null );
-}
-
+/// Array store
 unittest
 {
 	auto dict = [
@@ -578,6 +560,7 @@ unittest
 		"Hello5".Json ,
 	].Json.Var;
 
+	assert( dict.next_key == 6 );
 	assert( dict.select( 0 ).read!string == "Hello0" );
 	assert( dict.select( 1 ).read!string == "Hello1" );
 	assert( dict.select( 2 ).read!string == "Hello2" );
@@ -585,4 +568,66 @@ unittest
 	assert( dict.select( 4 ).read!string == "Hello4" );
 	assert( dict.select( 5 ).read!string == "Hello5" );
 	assert( dict.select( 6 ) == Null );
+}
+
+/// Array append
+unittest
+{
+	auto dict = Null;
+	dict = dict.insert( 0 , val => "Hello0".Var ).Var;
+	dict = dict.insert( 1 , val => "Hello1".Var ).Var;
+	dict = dict.insert( 2 , val => "Hello2".Var ).Var;
+	dict = dict.insert( 3 , val => "Hello3".Var ).Var;
+	dict = dict.insert( 4 , val => "Hello4".Var ).Var;
+	dict = dict.insert( 5 , val => "Hello5".Var ).Var;
+
+	assert( dict.next_key == 6 );
+	assert( dict.select( 0 ).read!string == "Hello0" );
+	assert( dict.select( 1 ).read!string == "Hello1" );
+	assert( dict.select( 2 ).read!string == "Hello2" );
+	assert( dict.select( 3 ).read!string == "Hello3" );
+	assert( dict.select( 4 ).read!string == "Hello4" );
+	assert( dict.select( 5 ).read!string == "Hello5" );
+	assert( dict.select( 6 ) == Null );
+}
+
+/// Dictionary store
+unittest
+{
+	auto dict = [
+		"Hello0" : 0.Json ,
+		"Hello1" : 1.Json ,
+		"Hello2" : 2.Json ,
+		"Hello3" : 3.Json ,
+		"Hello4" : 4.Json ,
+		"Hello5" : 5.Json ,
+	].Json.Var;
+
+	assert( dict.select([ "Hello0" ]).read!uint == 0 );
+	assert( dict.select([ "Hello1" ]).read!uint == 1 );
+	assert( dict.select([ "Hello2" ]).read!uint == 2 );
+	assert( dict.select([ "Hello3" ]).read!uint == 3 );
+	assert( dict.select([ "Hello4" ]).read!uint == 4 );
+	assert( dict.select([ "Hello5" ]).read!uint == 5 );
+	assert( dict.select([ "Hello6" ]) == Null );
+}
+
+/// Dictionary insert
+unittest
+{
+	auto dict = Null;
+	dict = dict.insert( "Hello0".hash[0] , val => 0.Var ).Var;
+	dict = dict.insert( "Hello1".hash[0] , val => 1.Var ).Var;
+	dict = dict.insert( "Hello2".hash[0] , val => 2.Var ).Var;
+	dict = dict.insert( "Hello3".hash[0] , val => 3.Var ).Var;
+	dict = dict.insert( "Hello4".hash[0] , val => 4.Var ).Var;
+	dict = dict.insert( "Hello5".hash[0] , val => 5.Var ).Var;
+
+	assert( dict.select([ "Hello0" ]).read!uint == 0 );
+	assert( dict.select([ "Hello1" ]).read!uint == 1 );
+	assert( dict.select([ "Hello2" ]).read!uint == 2 );
+	assert( dict.select([ "Hello3" ]).read!uint == 3 );
+	assert( dict.select([ "Hello4" ]).read!uint == 4 );
+	assert( dict.select([ "Hello5" ]).read!uint == 5 );
+	assert( dict.select([ "Hello6" ]) == Null );
 }
