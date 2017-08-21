@@ -346,6 +346,11 @@ Var select( Var var , string[] path )
 	return var;
 }
 
+Var select( Var var , string path )
+{
+	return var.select( path.split("/") );
+}
+
 Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
 {
 	switch( link.type ) {
@@ -360,6 +365,28 @@ Var insert( Var var , uint[] keys , Var delegate( Var ) patch )
 {
 	auto patch_middle = ( keys.length == 1 ) ? patch : ( Var val )=> val.insert( keys[ 1 .. $ ] , patch );
 	return var.insert( keys[0] , patch_middle ).Var;
+}
+
+Var insert( Var link , string[] path , Var delegate( Var ) patch )
+{
+	uint[] keys;
+
+	foreach( name ; path ) {
+		uint key;
+		try {
+			key = name.to!uint;
+		} catch( ConvException error ) {
+			key = name.hash[0];
+		}
+		keys ~= key;
+	}
+
+	return link.insert( keys , patch );
+}
+
+Var insert( Var link , string path , Var delegate( Var ) patch )
+{
+	return link.insert( path.split("/") , patch );
 }
 
 uint next_key( Var link )
@@ -603,31 +630,31 @@ unittest
 		"Hello5" : 5.Json ,
 	].Json.Var;
 
-	assert( dict.select([ "Hello0" ]).read!uint == 0 );
-	assert( dict.select([ "Hello1" ]).read!uint == 1 );
-	assert( dict.select([ "Hello2" ]).read!uint == 2 );
-	assert( dict.select([ "Hello3" ]).read!uint == 3 );
-	assert( dict.select([ "Hello4" ]).read!uint == 4 );
-	assert( dict.select([ "Hello5" ]).read!uint == 5 );
-	assert( dict.select([ "Hello6" ]) == Null );
+	assert( dict.select( "Hello0" ).read!uint == 0 );
+	assert( dict.select( "Hello1" ).read!uint == 1 );
+	assert( dict.select( "Hello2" ).read!uint == 2 );
+	assert( dict.select( "Hello3" ).read!uint == 3 );
+	assert( dict.select( "Hello4" ).read!uint == 4 );
+	assert( dict.select( "Hello5" ).read!uint == 5 );
+	assert( dict.select( "Hello6" ) == Null );
 }
 
 /// Dictionary insert
 unittest
 {
 	auto dict = Null;
-	dict = dict.insert( "Hello0".hash[0] , val => 0.Var ).Var;
-	dict = dict.insert( "Hello1".hash[0] , val => 1.Var ).Var;
-	dict = dict.insert( "Hello2".hash[0] , val => 2.Var ).Var;
-	dict = dict.insert( "Hello3".hash[0] , val => 3.Var ).Var;
-	dict = dict.insert( "Hello4".hash[0] , val => 4.Var ).Var;
-	dict = dict.insert( "Hello5".hash[0] , val => 5.Var ).Var;
+	dict = dict.insert( "Hello0" , val => 0.Var );
+	dict = dict.insert( "Hello1" , val => 1.Var );
+	dict = dict.insert( "Hello2" , val => 2.Var );
+	dict = dict.insert( "Hello3" , val => 3.Var );
+	dict = dict.insert( "Hello4" , val => 4.Var );
+	dict = dict.insert( "Hello5" , val => 5.Var );
 
-	assert( dict.select([ "Hello0" ]).read!uint == 0 );
-	assert( dict.select([ "Hello1" ]).read!uint == 1 );
-	assert( dict.select([ "Hello2" ]).read!uint == 2 );
-	assert( dict.select([ "Hello3" ]).read!uint == 3 );
-	assert( dict.select([ "Hello4" ]).read!uint == 4 );
-	assert( dict.select([ "Hello5" ]).read!uint == 5 );
-	assert( dict.select([ "Hello6" ]) == Null );
+	assert( dict.select( "Hello0" ).read!uint == 0 );
+	assert( dict.select( "Hello1" ).read!uint == 1 );
+	assert( dict.select( "Hello2" ).read!uint == 2 );
+	assert( dict.select( "Hello3" ).read!uint == 3 );
+	assert( dict.select( "Hello4" ).read!uint == 4 );
+	assert( dict.select( "Hello5" ).read!uint == 5 );
+	assert( dict.select( "Hello6" ) == Null );
 }
