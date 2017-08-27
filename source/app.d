@@ -335,12 +335,14 @@ Var select( Var var , string[] path )
 {
 	foreach( name ; path ) {
 		if( var == Null ) return Null;
+		
 		uint key;
-		try {
-			key = name.to!uint;
-		} catch( ConvException error ) {
+		if( name[0] == '@' ) {
+			key = name[ 1 .. $ ].to!uint;
+		} else {
 			key = name.hash[0];
 		}
+		
 		var = var.select( key );
 	}
 	return var;
@@ -367,26 +369,32 @@ Var insert( Var var , uint[] keys , Var delegate( Var ) patch )
 	return var.insert( keys[0] , patch_middle ).Var;
 }
 
-Var insert( Var link , string[] path , Var delegate( Var ) patch )
+Var insert( Var link , string[] path , Var delegate( Var , string[] ) patch , string[] path2 = [] )
 {
-	uint[] keys;
+	if( path.length == 0 ) return patch( link , path2 );
+	
+	auto name = path[0];
+	uint key;
 
-	foreach( name ; path ) {
-		uint key;
-		try {
-			key = name.to!uint;
-		} catch( ConvException error ) {
-			key = name.hash[0];
+	if( name[0] == '@' ) {
+		if( name.length == 1 ) {
+			key = link.next_key;
+			name ~= key.to!string;
+		} else {
+			key = name[ 1 .. $ ].to!uint;
 		}
-		keys ~= key;
+	} else {
+		key = name.hash[0];
 	}
 
-	return link.insert( keys , patch );
+	path2 ~= name;
+
+	return link.insert( key , var => var.insert( path[ 1 .. $ ] , patch , path2 ) ).Var;
 }
 
-Var insert( Var link , string path , Var delegate( Var ) patch )
+Var insert( Var link , string path , Var delegate( Var , string ) patch )
 {
-	return link.insert( path.split("/") , patch );
+	return link.insert( path.split("/") , ( var , path2 )=> patch( var , path2.join("/") ) );
 }
 
 uint next_key( Var link )
@@ -523,44 +531,39 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 }
 
 
-// user/age>18.json
-// comment/id=123.json?parent&message&author/name&author/avatar
-// comment/* => parent/child/*
+// user/age/@1,@2,@5:@6,@18:/article.json
+// comment/@123/parent,[child/@]/message,[author/name,ava].json
+// comment/@ => parent/child/@
 
 class DB {
 
-	static Json get( string id , const string[] fetch )
+	static Json get( string path , const string[] fetch )
 	{
-		auto entity = Store.root.select( id.to!uint );
+		auto entity = Store.root.select( path );
 
-		auto resp = [ "id" : id.Json ].Json;
+		auto resp = Json.emptyObject;
 
 		foreach( field ; fetch ) {
-			resp[ field ] = entity.select( field.hash[0] ).to!Json;
+			resp[ field ] = entity.select( field ).to!Json;
 		}
 
-		return resp;
+		return [ path : resp ].Json;
 	}
 
-	static Json patch( string id , Json data , const string[] fetch )
+	static Json patch( string path , Json data , const string[] fetch )
 	{
 		auto entity = data.Var;
+		string path2;
 
-		auto key = Store.draft.next_key;
-
-		Store.draft = Store.draft.insert( key , val => entity ).Var;
+		Store.draft = Store.draft.insert( path , ( val , p ) { path2 = p ; return entity; } );
 
 		if( data["parent"].type == Json.Type.String ) {
-			auto parent_id = data["parent"].get!string.to!uint;
+			auto parent_path = data["parent"].get!string;
 			
-			Store.draft = Store.draft.insert( parent_id , ( Var parent ) {
-				return parent.insert( "child".hash[0] , ( Var child ) {
-					return child.insert( child.next_key , val => key.Var ).Var;
-				} ).Var;
-			} ).Var;
+			Store.draft = Store.draft.insert( parent_path ~ "/child/@" , ( val , p )=> path2.Var );
 		}
 		
-		return [ "id" : key.to!string.Json ].Json;
+		return [ path : path2.Json ].Json;
 	}
 
 	static Json action( string method , string id , const string[] fetch , Json data )
@@ -588,8 +591,8 @@ unittest
 	].Json.Var;
 
 	assert( dict.next_key == 6 );
-	assert( dict.select( 0 ).read!string == "Hello0" );
-	assert( dict.select( 1 ).read!string == "Hello1" );
+	assert( dict.select( "@0" ).read!string == "Hello0" );
+	assert( dict.select( "@1" ).read!string == "Hello1" );
 	assert( dict.select( 2 ).read!string == "Hello2" );
 	assert( dict.select( 3 ).read!string == "Hello3" );
 	assert( dict.select( 4 ).read!string == "Hello4" );
@@ -605,12 +608,12 @@ unittest
 	dict = dict.insert( 1 , val => "Hello1".Var ).Var;
 	dict = dict.insert( 2 , val => "Hello2".Var ).Var;
 	dict = dict.insert( 3 , val => "Hello3".Var ).Var;
-	dict = dict.insert( 4 , val => "Hello4".Var ).Var;
-	dict = dict.insert( 5 , val => "Hello5".Var ).Var;
+	dict = dict.insert( "@4" , ( val , p )=> "Hello4".Var );
+	dict = dict.insert( "@" , ( val , p )=> "Hello5".Var );
 
 	assert( dict.next_key == 6 );
-	assert( dict.select( 0 ).read!string == "Hello0" );
-	assert( dict.select( 1 ).read!string == "Hello1" );
+	assert( dict.select( "@0" ).read!string == "Hello0" );
+	assert( dict.select( "@1" ).read!string == "Hello1" );
 	assert( dict.select( 2 ).read!string == "Hello2" );
 	assert( dict.select( 3 ).read!string == "Hello3" );
 	assert( dict.select( 4 ).read!string == "Hello4" );
@@ -643,12 +646,12 @@ unittest
 unittest
 {
 	auto dict = Null;
-	dict = dict.insert( "Hello0" , val => 0.Var );
-	dict = dict.insert( "Hello1" , val => 1.Var );
-	dict = dict.insert( "Hello2" , val => 2.Var );
-	dict = dict.insert( "Hello3" , val => 3.Var );
-	dict = dict.insert( "Hello4" , val => 4.Var );
-	dict = dict.insert( "Hello5" , val => 5.Var );
+	dict = dict.insert( "Hello0" , ( val , p )=> 0.Var );
+	dict = dict.insert( "Hello1" , ( val , p )=> 1.Var );
+	dict = dict.insert( "Hello2" , ( val , p )=> 2.Var );
+	dict = dict.insert( "Hello3" , ( val , p )=> 3.Var );
+	dict = dict.insert( "Hello4" , ( val , p )=> 4.Var );
+	dict = dict.insert( "Hello5" , ( val , p )=> 5.Var );
 
 	assert( dict.select( "Hello0" ).read!uint == 0 );
 	assert( dict.select( "Hello1" ).read!uint == 1 );
