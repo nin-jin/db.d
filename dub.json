@@ -4,11 +4,11 @@
 		"jin"
 	],
 	"dependencies": {
-		"vibe-d:http": "~>0.8",
-		"jin-tree": "~>3.0.0"
+		"vibe-d:http": "~>0.8"
 	},
 	"versions": ["VibeDefaultMain"],
+	"subConfigurations": {"vibe-d": "win32"},
 	"description": "Fast and compact immutable graph database",
 	"copyright": "Copyright © 2017, jin",
-	"license": "unlicensed"
+	"license": "MIT"
 }

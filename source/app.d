@@ -1,4 +1,5 @@
 import vibe.core.core;
+//import vibe.core.concurrency;
 import vibe.data.json;
 import vibe.http.server;
 import vibe.http.router;
@@ -19,7 +20,6 @@ import std.digest.murmurhash;
 class Store
 {
 	static string path= "./store/";
-	static sync_delay = 16.msecs;
 
 	static Stream[] streams;
 
@@ -34,7 +34,7 @@ class Store
 		return streams[ id ];
 	}
 
-	static sync()
+	static void sync()
 	{
 		if( root == draft ) return;
 		
@@ -48,14 +48,18 @@ class Store
 		root = draft;
 	}
 
+	static patch( Var delegate( Var ) task ) {
+		Store.draft = task( draft );
+	}
+
 	static this()
 	{
 		auto commits = stream(0);
-		root = draft = ( commits.size < 8 ? Null : commits.seek( commits.size - Var.sizeof ).read!Var );
+		root = draft = ( commits.size < 8 ? Null : commits.seek( commits.size - Var.sizeof.to!uint ).read!Var );
 
 		runTask({
 			while( true ) {
-				sync_delay.sleep;
+				1.msecs.sleep;
 				sync;
 			}
 		});
@@ -318,6 +322,7 @@ Var select( Var var , uint key )
 	switch( var.type ) {
 		case Type.Leaf : return var.read!(Leaf[]).select( key );
 		case Type.Branch : return var.read!(Branch[]).select( key );
+		case Type.Char : return Store.root.select( var.read!string );
 		default : return var;
 	}
 }
@@ -484,7 +489,7 @@ static this()
 	auto settings = new HTTPServerSettings;
 	settings.port = 8888;
 	settings.bindAddresses = [ "::1" , "127.0.0.1" ];
-	settings.options = HTTPServerOption.parseFormBody | HTTPServerOption.parseURL;
+	settings.options = HTTPServerOption.parseFormBody | HTTPServerOption.parseURL;// | HTTPServerOption.distribute;
 	
 	auto router = new URLRouter;
 
@@ -496,22 +501,49 @@ static this()
 
 void handle_websocket( scope WebSocket sock )
 {
-	while( sock.connected ) try {
+	string[] output;
+	auto root = Store.root;
 
-		auto message = parseJsonString( sock.receiveText );
-		auto data = message[ "data" ];
-		auto fetch = message["fetch"].get!(Json[]).map!q{ a.get!string }.array;
-		auto resp = DB.action( message[ "method" ].get!string , message[ "id" ].get!string , fetch , data );
+	while( sock.connected ) {
+		try {
+		
+			if( root != Store.root ) {
 
-		sock.send( [
-			"request_id" : message[ "request_id" ] ,
-			"data" : resp ,
-		].Json.toString );
+				foreach( msg ; output ) sock.send( msg );
+				output = [];
 
-	} catch( Exception error ) {
-		sock.send( [ "error" : error.msg.Json ].Json.toString );
-		stderr.writeln( error.msg );
-		stderr.writeln( error.info );
+				root = Store.root;
+			}
+
+			if( !sock.dataAvailableForRead && output.length > 0 ) {
+				1.msecs.sleep;
+				continue;
+			}
+		
+			auto text = sock.receiveText;		
+
+			auto message = parseJsonString( text );
+			auto data = message[ "data" ];
+			auto fetch = message["fetch"].get!(Json[]).map!q{ a.get!string }.array;
+			auto method = message[ "method" ].get!string;
+			auto resp = DB.action( method , message[ "id" ].get!string , fetch , data );
+
+			auto resp_str = [
+				"request_id" : message[ "request_id" ] ,
+				"data" : resp ,
+			].Json.toString;
+
+			switch( method ) {
+				case "GET" : sock.send( resp_str ); break;
+				case "PATCH" : output ~= resp_str; break;
+				default : throw new Exception( "Unknown method " ~ method );
+			}
+
+		} catch( Exception error ) {
+			sock.send( [ "error" : error.msg.Json ].Json.toString );
+			stderr.writeln( error.msg );
+			stderr.writeln( error.info );
+		}
 	}
 }
 
@@ -555,13 +587,17 @@ class DB {
 		auto entity = data.Var;
 		string path2;
 
-		Store.draft = Store.draft.insert( path , ( val , p ) { path2 = p ; return entity; } );
+		Store.patch( ( root ) {
+			root = root.insert( path , ( val , p ) { path2 = p ; return entity; } );
 
-		if( data["parent"].type == Json.Type.String ) {
-			auto parent_path = data["parent"].get!string;
-			
-			Store.draft = Store.draft.insert( parent_path ~ "/child/@" , ( val , p )=> path2.Var );
-		}
+			if( data["parent"].type == Json.Type.String ) {
+				auto parent_path = data["parent"].get!string;
+
+				root = root.insert( parent_path ~ "/child/@" , ( val , p )=> path2.Var );
+			}
+
+			return root;
+		} );
 		
 		return [ path : path2.Json ].Json;
 	}
