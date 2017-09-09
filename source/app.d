@@ -667,7 +667,20 @@ class DB {
 		auto resp = Json.emptyObject;
 
 		foreach( path , entity ; entities ) {
-			resp[ path.join( "/" ) ] = entity.to!Json;
+			auto dict = &resp;
+
+			foreach( name ; path[ 0 .. $ - 1 ] ) {
+				
+				auto sub = name in *dict;
+				if( sub ) {
+					dict = sub;
+				} else {
+					(*dict)[ name ] = Json.emptyObject;
+					dict = name in *dict;
+				}
+			}
+
+			(*dict)[ path[ $ - 1 ] ] = entity.to!Json;
 		}
 
 		return resp;
