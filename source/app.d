@@ -349,14 +349,14 @@ Var select( Var var , uint[4] keys )
 	return var;
 }
 
-Var[string] select( Var root , string[] path )
+Var[ immutable string[] ] select( Var root , string[] path )
 {
-	auto nodes = [ "" : root ];
-	Var[ string ] values;
+	Var[ immutable string[] ] nodes = [ [] : root ];
+	Var[ immutable string[] ] values;
 
 	foreach( name ; path ) {
 
-		Var[ string ] nodes1;
+		Var[ immutable string[] ] nodes1;
 
 		foreach( p , v ; nodes ) {
 			if( v.type == Type.Char ) {
@@ -370,14 +370,14 @@ Var[string] select( Var root , string[] path )
 			}
 		}
 
-		Var[ string ] nodes2;
+		Var[ immutable string[] ] nodes2;
 
 		foreach( p , v ; nodes1 ) {
 			if( v == Null ) continue;
 		
 			if( name == "@" || name == "" ) {
 				foreach( leaf ; v.leafs ) {
-					nodes2[ p ~ "/@" ~ leaf.key.to!string ] = leaf.value;
+					nodes2[ p ~ [ "@" ~ leaf.key.to!string ].idup ] = leaf.value;
 				}
 				continue;
 			}
@@ -390,7 +390,7 @@ Var[string] select( Var root , string[] path )
 				key = name.hash[0];
 			}
 
-			nodes2[ p ~ "/" ~ name ] = v.select( key );
+			nodes2[ p ~ [ name ].idup ] = v.select( key );
 		}
 
 		nodes = nodes2;
@@ -404,7 +404,7 @@ Var[string] select( Var root , string[] path )
 	return values;
 }
 
-Var[string] select( Var root , string path )
+auto select( Var root , string path )
 {
 	return root.select( path.split("/") );
 }
@@ -664,7 +664,7 @@ class DB {
 		auto resp = Json.emptyObject;
 
 		foreach( path , entity ; entities ) {
-			resp[ path ] = entity.to!Json;
+			resp[ path.join( "/" ) ] = entity.to!Json;
 		}
 
 		return resp;
