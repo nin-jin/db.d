@@ -117,7 +117,7 @@ class Stream
 	if( isDynamicArray!Type )
 	{
 		auto buffer = new Unqual!(ElementEncodingType!Type)[ count ];
-		this.input.rawRead( buffer );
+		if( count > 0 ) this.input.rawRead( buffer );
 		return cast( Type ) buffer;
 	}
 
@@ -258,7 +258,9 @@ struct Var
 
 	this( Json data )
 	{
-		if( data.type == Json.Type.Int ) {
+		if( data.type == Json.Type.Null ) {
+			this( Type.Null , 0 , 0 , 0 );
+		} else if( data.type == Json.Type.Int ) {
 			this( data.get!uint );
 		} else if( data.type == Json.Type.String ) {
 			this( data.get!string );
