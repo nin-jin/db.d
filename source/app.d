@@ -317,12 +317,25 @@ struct Var
 
 enum Null = Var( Type.Null , 0 , 0 , 0 );
 
+Leaf[] leafs( Var var )
+{
+	switch( var.type ) {
+		case Type.Leaf : return var.read!(Leaf[]);
+		case Type.Branch :
+			Leaf[] leafs;
+			foreach( branch ; var.read!(Branch[]) ) {
+				leafs ~= branch.target.leafs;
+			}
+			return leafs;
+		default : throw new Exception( "Unsupported type for leafs: " ~ var.type );
+	}
+}
+
 Var select( Var var , uint key )
 {
 	switch( var.type ) {
 		case Type.Leaf : return var.read!(Leaf[]).select( key );
 		case Type.Branch : return var.read!(Branch[]).select( key );
-		case Type.Char : return Store.root.select( var.read!string );
 		default : return var;
 	}
 }
@@ -336,26 +349,64 @@ Var select( Var var , uint[4] keys )
 	return var;
 }
 
-Var select( Var var , string[] path )
+Var[string] select( Var root , string[] path )
 {
+	auto nodes = [ "" : root ];
+	Var[ string ] values;
+
 	foreach( name ; path ) {
-		if( var == Null ) return Null;
-		
-		uint key;
-		if( name[0] == '@' ) {
-			key = name[ 1 .. $ ].to!uint;
-		} else {
-			key = name.hash[0];
+
+		Var[ string ] nodes1;
+
+		foreach( p , v ; nodes ) {
+			if( v.type == Type.Char ) {
+				auto link = v.read!string;
+				values[ p ] = v;
+				foreach( p2 , v2 ; root.select( link ) ) {
+					nodes1[ p2 ] = v2;
+				}
+			} else {
+				nodes1[ p ] = v;
+			}
 		}
+
+		Var[ string ] nodes2;
+
+		foreach( p , v ; nodes1 ) {
+			if( v == Null ) continue;
 		
-		var = var.select( key );
+			if( name == "@" || name == "" ) {
+				foreach( leaf ; v.leafs ) {
+					nodes2[ p ~ "/@" ~ leaf.key.to!string ] = leaf.value;
+				}
+				continue;
+			}
+
+			uint key;
+
+			if( name[0] == '@' ) {
+				key = name[ 1 .. $ ].to!uint;
+			} else {
+				key = name.hash[0];
+			}
+
+			nodes2[ p ~ "/" ~ name ] = v.select( key );
+		}
+
+		nodes = nodes2;
+
 	}
-	return var;
+
+	foreach( p , v ; nodes ) {
+		values[ p ] = v;
+	}
+
+	return values;
 }
 
-Var select( Var var , string path )
+Var[string] select( Var root , string path )
 {
-	return var.select( path.split("/") );
+	return root.select( path.split("/") );
 }
 
 Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
@@ -565,21 +616,58 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 // user/age/@1,@2,@5:@6,@18:/article.json
 // comment/@123/parent,[child/@]/message,[author/name,ava].json
-// comment/@ => parent/child/@
+// comment/@id => parent/child/@
+//
+// commnet
+//   @123
+//     parent \comment/@23
+//     child
+//       @0 \comment/@223
+//       @1 \comment/@323
+//     author \user/@1
+//   @23 message \Hello 23
+//   @223 message \Hello 223
+//   @323 message \Hello 323
+// user
+//   @1
+//     name \Jin
+//     ava \trollface.png
+//
+//{
+//	"comment" : {
+//		"@123" : {
+//			"parent" : "comment/@23" ,
+//			"child" : {
+//				"@0" : "comment/@223" ,
+//				"@1" : "comment/@323" ,
+//			} ,
+//			"author" : "user/@1"
+//		},
+//		"@23" : {
+//			"message" : "Hello 23"
+//		} ,
+//		"@223" : {
+//			"message" : "Hello 223"
+//		},
+//		"@323" : {
+//			"message" : "Hello 323"
+//		}
+//	}
+//}
 
 class DB {
 
 	static Json get( string path , const string[] fetch )
 	{
-		auto entity = Store.root.select( path );
+		auto entities = Store.root.select( path );
 
 		auto resp = Json.emptyObject;
 
-		foreach( field ; fetch ) {
-			resp[ field ] = entity.select( field ).to!Json;
+		foreach( path , entity ; entities ) {
+			resp[ path ] = entity.to!Json;
 		}
 
-		return [ path : resp ].Json;
+		return resp;
 	}
 
 	static Json patch( string path , Json data , const string[] fetch )
