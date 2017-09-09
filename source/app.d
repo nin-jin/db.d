@@ -349,12 +349,12 @@ Var select( Var var , uint[4] keys )
 	return var;
 }
 
-Var[ immutable string[] ] select( Var root , string[] path )
+Var[ immutable string[] ] select( Var root , string[][] path )
 {
 	Var[ immutable string[] ] nodes = [ [] : root ];
 	Var[ immutable string[] ] values;
 
-	foreach( name ; path ) {
+	foreach( names ; path ) {
 
 		Var[ immutable string[] ] nodes1;
 
@@ -372,25 +372,28 @@ Var[ immutable string[] ] select( Var root , string[] path )
 
 		Var[ immutable string[] ] nodes2;
 
-		foreach( p , v ; nodes1 ) {
-			if( v == Null ) continue;
+		foreach( name ; names ) {
+
+			foreach( p , v ; nodes1 ) {
+				if( v == Null ) continue;
 		
-			if( name == "@" || name == "" ) {
-				foreach( leaf ; v.leafs ) {
-					nodes2[ p ~ [ "@" ~ leaf.key.to!string ].idup ] = leaf.value;
+				if( name == "@" || name == "" ) {
+					foreach( leaf ; v.leafs ) {
+						nodes2[ p ~ [ "@" ~ leaf.key.to!string ].idup ] = leaf.value;
+					}
+					continue;
 				}
-				continue;
+
+				uint key;
+
+				if( name[0] == '@' ) {
+					key = name[ 1 .. $ ].to!uint;
+				} else {
+					key = name.hash[0];
+				}
+
+				nodes2[ p ~ [ name ].idup ] = v.select( key );
 			}
-
-			uint key;
-
-			if( name[0] == '@' ) {
-				key = name[ 1 .. $ ].to!uint;
-			} else {
-				key = name.hash[0];
-			}
-
-			nodes2[ p ~ [ name ].idup ] = v.select( key );
 		}
 
 		nodes = nodes2;
@@ -406,7 +409,7 @@ Var[ immutable string[] ] select( Var root , string[] path )
 
 auto select( Var root , string path )
 {
-	return root.select( path.split("/") );
+	return root.select( path.split("/").map!q{ a.split( "," ) }.array );
 }
 
 Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
