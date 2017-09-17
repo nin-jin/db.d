@@ -386,6 +386,14 @@ Var[ immutable string[] ] select( Var root , string[][] path )
 					continue;
 				}
 
+				auto p2 = p ~ [ name ].idup;
+
+				auto cached = p2 in cache;
+				if( cached ) {
+					nodes2[ p2 ] = *cached;
+					continue;
+				}
+
 				uint key;
 
 				if( name[0] == '@' ) {
@@ -394,7 +402,9 @@ Var[ immutable string[] ] select( Var root , string[][] path )
 					key = name.hash[0];
 				}
 
-				nodes2[ p ~ [ name ].idup ] = v.select( key );
+				auto v2 = v.select( key );
+				nodes2[ p2 ] = v2;
+				cache[ p2 ] = v2;
 			}
 		}
 
@@ -413,6 +423,8 @@ auto select( Var root , string path )
 {
 	return root.select( path.split("/").map!q{ a.split( "," ) }.array );
 }
+
+Var[ immutable string[] ] cache;
 
 Branch[] insert( Var link , uint key , Var delegate( Var ) patch )
 {
@@ -450,7 +462,11 @@ Var insert( Var link , string[] path , Var delegate( Var , string[] ) patch , st
 
 	path2 ~= name;
 
-	return link.insert( key , var => var.insert( path[ 1 .. $ ] , patch , path2 ) ).Var;
+	return link.insert( key , ( var ) {
+		auto v = var.insert( path[ 1 .. $ ] , patch , path2 );
+		cache[ path2.idup ] = v;
+		return v;
+	} ).Var;
 }
 
 Var insert( Var link , string path , Var delegate( Var , string ) patch )
@@ -580,9 +596,8 @@ void handle_websocket( scope WebSocket sock )
 
 			auto message = parseJsonString( text );
 			auto data = message[ "data" ];
-			auto fetch = message["fetch"].get!(Json[]).map!q{ a.get!string }.array;
 			auto method = message[ "method" ].get!string;
-			auto resp = DB.action( method , message[ "id" ].get!string , fetch , data );
+			auto resp = DB.action( method , message[ "id" ].get!string , data );
 
 			auto resp_str = [
 				"request_id" : message[ "request_id" ] ,
@@ -609,7 +624,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 	try {
 
-		res.writeBody( DB.action( req.method.to!string , req.path[ 1 .. $ ] , req.query.getAll( "fetch" ) , Json() ).toString , "application/json" );
+		res.writeBody( DB.action( req.method.to!string , req.path[ 1 .. $ ] , Json() ).toString , "application/json" );
 
 	} catch( Exception error ) {
 		res.writeBody( error.msg , HTTPStatus.internalServerError , "text/plain" );
@@ -662,7 +677,7 @@ void handle_http( HTTPServerRequest req , HTTPServerResponse res )
 
 class DB {
 
-	static Json get( string path , const string[] fetch )
+	static Json get( string path )
 	{
 		auto entities = Store.root.select( path );
 
@@ -688,7 +703,7 @@ class DB {
 		return resp;
 	}
 
-	static Json patch( string path , Json data , const string[] fetch )
+	static Json patch( string path , Json data )
 	{
 		auto entity = data.Var;
 		string path2;
@@ -708,11 +723,11 @@ class DB {
 		return [ path : path2.Json ].Json;
 	}
 
-	static Json action( string method , string id , const string[] fetch , Json data )
+	static Json action( string method , string id , Json data )
 	{
 		switch( method ) {
-			case "GET" : return DB.get( id , fetch );
-			case "PATCH" : return DB.patch( id , data , fetch );
+			case "GET" : return DB.get( id );
+			case "PATCH" : return DB.patch( id , data );
 			default : throw new Exception( "Unknown method " ~ method );
 		}
 	}
