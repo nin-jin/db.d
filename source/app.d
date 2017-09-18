@@ -256,7 +256,7 @@ struct Var
 		this( leafs );
 	}
 
-	this( Json data )
+	this( Json data , string[] path = null )
 	{
 		if( data.type == Json.Type.Null ) {
 			this( Type.Null , 0 , 0 , 0 );
@@ -269,7 +269,9 @@ struct Var
 		} else if( data.type == Json.Type.Object ) {
 			Leaf[] leafs;
 			foreach( key , value ; data.get!(Json[string]) ) {
-				leafs ~= Leaf( key.hash[0] , value.Var );
+				auto v = value.Var;
+				leafs ~= Leaf( key.hash[0] , v );
+				if( path ) cache[ path.idup ~ key ] = v;
 			}
 			this( leafs.sort!q{ a.key < b.key }.array );
 		} else {
@@ -705,11 +707,10 @@ class DB {
 
 	static Json patch( string path , Json data )
 	{
-		auto entity = data.Var;
 		string path2;
 
 		Store.patch( ( root ) {
-			root = root.insert( path , ( val , p ) { path2 = p ; return entity; } );
+			root = root.insert( path , ( val , p ) { path2 = p ; return data.Var( p.split( "/" ) ); } );
 
 			if( data["parent"].type == Json.Type.String ) {
 				auto parent_path = data["parent"].get!string;

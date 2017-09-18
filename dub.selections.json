@@ -3,15 +3,15 @@
 	"versions": {
 		"botan": "1.12.9",
 		"botan-math": "1.0.3",
-		"diet-ng": "1.4.2",
-		"eventcore": "0.8.14",
+		"diet-ng": "1.4.3",
+		"eventcore": "0.8.18",
 		"jin-tree": "3.0.0",
 		"libasync": "0.8.3",
 		"libevent": "2.0.2+2.0.16",
 		"memutils": "0.4.9",
 		"openssl": "1.1.5+1.0.1g",
 		"taggedalgebraic": "0.10.7",
-		"vibe-core": "1.1.1",
+		"vibe-core": "1.2.0",
 		"vibe-d": "0.8.1"
 	}
 }
