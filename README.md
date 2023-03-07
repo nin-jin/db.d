@@ -26,3 +26,7 @@ Fast and compact immutable graph database
 * **Triggers support?**
 * **ACL support!**
 * **Drivers for most popular languages!**
+
+## Internals
+
+![](structs.svg)
