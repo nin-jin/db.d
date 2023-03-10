@@ -3,12 +3,12 @@ Fast and compact immutable graph database
 
 ## Key features of MVP (coming soon)
 
-* **Fast data adding.** We need not of "Write Ahead Log" and two-step commits.
-* **Compact storing.** We need not to reserve memory for inplace data changing.
-* **Fast lookuping.** We have direct links between records and record local small indexes.
+* **Fast data add.** "Write Ahead Log" and two-step commits isn't requres.
+* **Compact store.** Reserving memory for inplace data changing isn't required.
+* **Fast lookup.** We have direct links between records and record local small indexes.
 * **Easy API.** We have same REST API over HTTP and WebSockets.
 * **[ACID](https://en.wikipedia.org/wiki/ACID).** Every commit is atomic. 
-* **Fast restart.** We need not to restore database at start after an unexpected server shutdown. Simply using last commited state.
+* **Fast restart.** Restore database at start after an unexpected server shutdown isn't required. Only file trim.
 
 ## Future features
 
